@@ -1,0 +1,6 @@
+{
+  "name": "SafeRider AI",
+  "description": "Asisten Navigasi Cerdas & Keamanan Berkendara Real-Time untuk Pengendara Malam Hari",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

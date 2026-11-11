@@ -1,0 +1,126 @@
+{
+  "entities": {
+    "Hazard": {
+      "title": "Hazard",
+      "description": "Laporan bahaya jalan malam hari dari komunitas SafeRider",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "ID pengguna pelapor"
+        },
+        "userName": {
+          "type": "string",
+          "description": "Nama pengguna pelapor"
+        },
+        "type": {
+          "type": "string",
+          "description": "Tipe bahaya: PJU_MATI, JALAN_BERLUBANG, RAWAN_BEGAL, BLIND_SPOT, GENANGAN_AIR"
+        },
+        "title": {
+          "type": "string",
+          "description": "Judul bahaya yang dilaporkan"
+        },
+        "locationName": {
+          "type": "string",
+          "description": "Nama lokasi jalan atau patokan"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Catatan tambahan"
+        },
+        "x": {
+          "type": "number",
+          "description": "Koordinat horizontal relatif pada peta"
+        },
+        "y": {
+          "type": "number",
+          "description": "Koordinat vertikal relatif pada peta"
+        },
+        "illuminationScore": {
+          "type": "number",
+          "description": "Skor penerangan jalan (1.0 - 10.0)"
+        },
+        "upvotes": {
+          "type": "integer",
+          "description": "Jumlah verifikasi upvote dari komunitas"
+        },
+        "verified": {
+          "type": "boolean",
+          "description": "Status verifikasi oleh sistem atau komunitas"
+        },
+        "distanceMeters": {
+          "type": "integer",
+          "description": "Jarak perkiraan dalam meter"
+        },
+        "recommendedAction": {
+          "type": "string",
+          "description": "Tindakan mitigasi yang disarankan"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Waktu pembuatan laporan"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Waktu pembaruan laporan"
+        }
+      },
+      "required": ["userId", "type", "title", "locationName", "createdAt", "updatedAt"]
+    },
+    "EmergencyContact": {
+      "title": "EmergencyContact",
+      "description": "Kontak darurat tersimpan milik pengguna",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "ID pemilik kontak"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nama kontak"
+        },
+        "role": {
+          "type": "string",
+          "description": "Hubungan / instansi kontak"
+        },
+        "phoneNumber": {
+          "type": "string",
+          "description": "Nomor telepon kontak"
+        },
+        "isPrimary": {
+          "type": "boolean",
+          "description": "Apakah merupakan kontak utama"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Waktu pembuatan"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Waktu pembaruan"
+        }
+      },
+      "required": ["userId", "name", "role", "phoneNumber", "isPrimary", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/hazards/{hazardId}": {
+      "schema": {
+        "$ref": "#/entities/Hazard"
+      },
+      "description": "Koleksi titik bahaya crowdsourcing komunitas"
+    },
+    "/users/{userId}/contacts/{contactId}": {
+      "schema": {
+        "$ref": "#/entities/EmergencyContact"
+      },
+      "description": "Koleksi kontak darurat per pengguna"
+    }
+  }
+}

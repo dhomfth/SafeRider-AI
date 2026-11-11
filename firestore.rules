@@ -1,0 +1,103 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidHazard(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+             data.type is string && data.type in ['PJU_MATI', 'JALAN_BERLUBANG', 'RAWAN_BEGAL', 'BLIND_SPOT', 'GENANGAN_AIR'] &&
+             data.title is string && data.title.size() >= 2 && data.title.size() <= 100 &&
+             data.locationName is string && data.locationName.size() >= 2 && data.locationName.size() <= 150 &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 300)) &&
+             (!('userName' in data) || (data.userName is string && data.userName.size() <= 60)) &&
+             (!('x' in data) || data.x is number) &&
+             (!('y' in data) || data.y is number) &&
+             (!('illuminationScore' in data) || (data.illuminationScore is number && data.illuminationScore >= 0.0 && data.illuminationScore <= 10.0)) &&
+             (!('upvotes' in data) || data.upvotes is int) &&
+             (!('verified' in data) || data.verified is bool) &&
+             (!('distanceMeters' in data) || data.distanceMeters is int) &&
+             (!('recommendedAction' in data) || (data.recommendedAction is string && data.recommendedAction.size() <= 200)) &&
+             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    function isValidEmergencyContact(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 60 &&
+             data.role is string && data.role.size() >= 2 && data.role.size() <= 60 &&
+             data.phoneNumber is string && data.phoneNumber.size() >= 3 && data.phoneNumber.size() <= 30 &&
+             data.isPrimary is bool &&
+             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    // Community Hazards Collection
+    match /hazards/{hazardId} {
+      allow get, list: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       isValidId(hazardId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       isValidHazard(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(hazardId) &&
+                       isValidHazard(incoming()) &&
+                       (
+                         // Author can update full content
+                         (existing().userId == request.auth.uid && incoming().userId == existing().userId && incoming().createdAt == existing().createdAt) ||
+                         // Community members can upvote / verify
+                         (incoming().diff(existing()).affectedKeys().hasOnly(['upvotes', 'verified', 'updatedAt']) && incoming().userId == existing().userId && incoming().createdAt == existing().createdAt)
+                       );
+
+      allow delete: if isSignedIn() &&
+                       isValidId(hazardId) &&
+                       existing().userId == request.auth.uid;
+    }
+
+    // User Private Emergency Contacts Subcollection
+    match /users/{userId}/contacts/{contactId} {
+      allow get, list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(contactId) &&
+                       incoming().userId == userId &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       isValidEmergencyContact(incoming());
+
+      allow update: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(contactId) &&
+                       incoming().userId == userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidEmergencyContact(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'role', 'phoneNumber', 'isPrimary', 'updatedAt']);
+
+      allow delete: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(contactId);
+    }
+  }
+}
