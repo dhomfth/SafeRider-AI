@@ -139,11 +139,15 @@ fun HazardsMapScreen(
                     RouteMapCanvas(
                         route = null,
                         hazards = filteredHazards,
+                        pois = state.realWorldPois,
+                        mapStyle = state.mapStyleMode,
                         progressRatio = 0f,
                         isNavigating = false,
+                        showInteractiveControls = true,
                         onHazardSelected = { hazard ->
                             selectedHazardDetail = hazard
-                        }
+                        },
+                        onUpvoteHazard = onUpvoteHazard
                     )
                 }
             }

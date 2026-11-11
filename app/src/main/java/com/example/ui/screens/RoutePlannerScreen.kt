@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +26,8 @@ import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DirectionsBike
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.GpsNotFixed
 import androidx.compose.material.icons.filled.Lightbulb
@@ -44,6 +47,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,6 +68,7 @@ import com.example.ui.theme.SafeRiderDarkBg
 import com.example.ui.theme.SafeRiderGreen
 import com.example.ui.theme.SafeRiderOrange
 import com.example.ui.theme.SafeRiderRed
+import com.example.model.MapStyleMode
 import com.example.viewmodel.SafeRiderUiState
 
 @Composable
@@ -72,8 +79,18 @@ fun RoutePlannerScreen(
     onToggleNight: () -> Unit,
     onSelectVehicle: (String) -> Unit,
     onRequestLocationPermission: () -> Unit = {},
+    onDetectGpsLocation: () -> Unit = {},
+    onOpenInGoogleMaps: (() -> Unit)? = null,
+    onMapStyleChange: ((MapStyleMode) -> Unit)? = null,
+    onUpvoteHazard: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    var isMapExpanded by remember { mutableStateOf(false) }
+    val mapHeight by animateDpAsState(
+        targetValue = if (isMapExpanded) 340.dp else 210.dp,
+        label = "minimapHeight"
+    )
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -230,7 +247,13 @@ fun RoutePlannerScreen(
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(if (state.hasLocationPermission) SafeRiderGreen.copy(alpha = 0.15f) else SafeRiderCyan.copy(alpha = 0.15f))
                                 .border(1.dp, if (state.hasLocationPermission) SafeRiderGreen else SafeRiderCyan, RoundedCornerShape(8.dp))
-                                .clickable { onRequestLocationPermission() }
+                                .clickable {
+                                    if (state.hasLocationPermission) {
+                                        onDetectGpsLocation()
+                                    } else {
+                                        onRequestLocationPermission()
+                                    }
+                                }
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                                 .testTag("gps_badge_route_planner")
                         ) {
@@ -277,36 +300,69 @@ fun RoutePlannerScreen(
             }
         }
 
-        // 3. Mini Map Preview
+        // 3. Interactive Mini Map Preview (Expandable with Zoom In/Out & Pan)
         item {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(180.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .border(1.dp, Color(0xFF26354D), RoundedCornerShape(16.dp))
+                    .height(mapHeight)
+                    .clip(RoundedCornerShape(18.dp))
+                    .border(1.dp, Color(0xFF26354D), RoundedCornerShape(18.dp))
             ) {
                 RouteMapCanvas(
                     route = state.selectedRoute,
                     hazards = state.hazards,
+                    pois = state.realWorldPois,
+                    mapStyle = state.mapStyleMode,
+                    onMapStyleChange = onMapStyleChange,
                     progressRatio = 0.05f,
-                    isNavigating = false
+                    isNavigating = false,
+                    showInteractiveControls = true,
+                    onOpenInGoogleMaps = onOpenInGoogleMaps,
+                    onUpvoteHazard = onUpvoteHazard
                 )
 
-                // Overlay pill on top-left of map
-                Box(
+                // Top banner with instructions and full-screen / expand toggle
+                Row(
                     modifier = Modifier
-                        .padding(10.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF0F172A).copy(alpha = 0.85f))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .fillMaxWidth()
+                        .padding(8.dp)
+                        .align(Alignment.TopCenter),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Jalur Cyan = Terang • Oranye = Minim Lampu",
-                        color = Color(0xFFE2E8F0),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium
-                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF0F172A).copy(alpha = 0.9f))
+                            .border(1.dp, SafeRiderCyan.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "🔍 Zoom In/Out • Geser • Ketuk Bahaya",
+                            color = SafeRiderCyan,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF0F172A).copy(alpha = 0.92f))
+                            .border(1.dp, Color(0xFF334155), CircleShape)
+                            .clickable { isMapExpanded = !isMapExpanded }
+                            .testTag("toggle_expand_minimap_button"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isMapExpanded) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                            contentDescription = "Perbesar/Kecilkan Minimap",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }
@@ -349,40 +405,73 @@ fun RoutePlannerScreen(
             )
         }
 
-        // 6. Big Start Navigation Action
+        // 6. Big Start Navigation Action & Google Maps Integration
         item {
             Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = onStartNavigation,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (state.selectedRoute?.isRecommended == true) SafeRiderCyan else SafeRiderGreen
-                ),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(60.dp)
-                    .testTag("start_navigation_button")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Navigation,
-                    contentDescription = null,
-                    tint = Color(0xFF090D16),
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Column(horizontalAlignment = Alignment.Start) {
-                    Text(
-                        text = "MULAI NAVIGASI SAFELIGHT",
-                        color = Color(0xFF090D16),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Black
+                Button(
+                    onClick = onStartNavigation,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (state.selectedRoute?.isRecommended == true) SafeRiderCyan else SafeRiderGreen
+                    ),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(60.dp)
+                        .testTag("start_navigation_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Navigation,
+                        contentDescription = null,
+                        tint = Color(0xFF090D16),
+                        modifier = Modifier.size(24.dp)
                     )
-                    Text(
-                        text = "${state.selectedRoute?.durationMinutes ?: 18} Mnt • Mode Suara Aktif",
-                        color = Color(0xFF00363D),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(horizontalAlignment = Alignment.Start) {
+                        Text(
+                            text = "MULAI NAVIGASI",
+                            color = Color(0xFF090D16),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                        Text(
+                            text = "${state.selectedRoute?.durationMinutes ?: 18} Mnt • SafeLight",
+                            color = Color(0xFF00363D),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // Direct Google Maps Action
+                Button(
+                    onClick = { onOpenInGoogleMaps?.invoke() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier
+                        .height(60.dp)
+                        .border(1.dp, Color(0xFF1A73E8), RoundedCornerShape(18.dp))
+                        .testTag("planner_open_google_maps_btn")
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.Navigation,
+                            contentDescription = null,
+                            tint = Color(0xFF1A73E8),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Peta Nyata",
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(20.dp))

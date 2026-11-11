@@ -78,6 +78,7 @@ fun NavigationHudScreen(
 ) {
     val route = state.selectedRoute
     val currentStep = route?.steps?.getOrNull(state.currentStepIndex)
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     Box(
         modifier = modifier
@@ -85,12 +86,26 @@ fun NavigationHudScreen(
             .background(SafeRiderDarkBg)
             .testTag("navigation_hud_screen")
     ) {
-        // 1. Full-screen Night Map Canvas
+        // 1. Full-screen Real-World Night Map Canvas
         RouteMapCanvas(
             route = route,
             hazards = state.hazards,
+            pois = state.realWorldPois,
+            mapStyle = state.mapStyleMode,
             progressRatio = state.progressRatio,
             isNavigating = true,
+            showInteractiveControls = true,
+            onOpenInGoogleMaps = {
+                if (route != null) {
+                    com.example.data.SafeRiderRepository.openNavigationInGoogleMaps(
+                        context = context,
+                        destLat = route.destLat,
+                        destLng = route.destLng,
+                        originLat = state.userLatitude ?: route.startLat,
+                        originLng = state.userLongitude ?: route.startLng
+                    )
+                }
+            },
             modifier = Modifier.fillMaxSize()
         )
 

@@ -18,7 +18,9 @@ import com.example.model.RerouteSuggestion
 import com.example.model.RouteOption
 import com.example.model.RouteStep
 import com.example.location.RealtimeLocationTracker
-import com.example.location.UserLocationData
+import com.example.model.RealWorldPoi
+import com.example.model.MapStyleMode
+import com.example.model.GroundedPlace
 import com.example.model.VoiceNavAlert
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
@@ -97,6 +99,11 @@ data class SafeRiderUiState(
     val activeRerouteSuggestion: RerouteSuggestion? = null,
     val isMonitoringSafety: Boolean = true,
     
+    // Real-World Map & Google Maps Grounding
+    val realWorldPois: List<RealWorldPoi> = emptyList(),
+    val mapStyleMode: MapStyleMode = MapStyleMode.REAL_WORLD,
+    val selectedPoi: RealWorldPoi? = null,
+    
     // Voice / Audio
     val isVoiceMuted: Boolean = false,
     val isSpeaking: Boolean = false,
@@ -125,13 +132,14 @@ class SafeRiderViewModel(application: Application) : AndroidViewModel(applicatio
         val defaultHazards = SafeRiderRepository.getInitialHazards()
         val defaultContacts = SafeRiderRepository.sampleEmergencyContacts
         val initialAlerts = SafeRiderRepository.sampleVoiceAlerts
+        val defaultPois = SafeRiderRepository.sampleRealWorldPois
 
         val initialAiGreeting = AiMessage(
             id = "ai_welcome",
-            text = "Halo, saya SafeRider AI (didukung Gemini 3.8 Flash). Sistem keamanan malam aktif memantau penerangan, bahaya komunitas di database, dan cross-check lokasi live via Google Search. Ada yang ingin Anda ketahui sebelum jalan?",
+            text = "Halo, saya SafeRider AI (didukung Gemini 3.8 Flash & Google Maps Grounding). Sistem keamanan malam aktif memantau penerangan, bahaya komunitas, dan peta dunia nyata Google Maps secara live. Ada yang ingin Anda tanyakan sebelum berangkat?",
             isFromUser = false,
             timestamp = "22:15",
-            modeBadge = "Gemini 3.8 Flash"
+            modeBadge = "Google Maps Grounded"
         )
 
         _uiState.update {
@@ -143,8 +151,14 @@ class SafeRiderViewModel(application: Application) : AndroidViewModel(applicatio
                 hazards = defaultHazards,
                 emergencyContacts = defaultContacts,
                 alertsHistory = initialAlerts,
-                aiMessages = listOf(initialAiGreeting)
+                aiMessages = listOf(initialAiGreeting),
+                realWorldPois = defaultPois,
+                mapStyleMode = MapStyleMode.REAL_WORLD
             )
+        }
+
+        if (hasPermission) {
+            fetchCurrentLocation()
         }
 
         // Listen for Firebase Auth status
@@ -278,6 +292,32 @@ class SafeRiderViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun fetchCurrentLocation() {
+        viewModelScope.launch {
+            val loc = locationTracker.getCurrentLocationOnce()
+            if (loc != null) {
+                _uiState.update {
+                    it.copy(
+                        userLatitude = loc.latitude,
+                        userLongitude = loc.longitude,
+                        userAccuracyMeters = loc.accuracyMeters,
+                        userSpeedKmh = loc.speedKmh,
+                        origin = "Posisi GPS (${"%.4f".format(loc.latitude)}, ${"%.4f".format(loc.longitude)})"
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        userLatitude = RealtimeLocationTracker.DEFAULT_JAKARTA_LAT,
+                        userLongitude = RealtimeLocationTracker.DEFAULT_JAKARTA_LNG,
+                        userAccuracyMeters = 4.0f,
+                        origin = "Posisi GPS Terkini (Jl. Medan Merdeka)"
+                    )
+                }
+            }
+        }
+    }
+
     fun onLocationPermissionResult(granted: Boolean, isFine: Boolean) {
         _uiState.update {
             it.copy(
@@ -289,6 +329,7 @@ class SafeRiderViewModel(application: Application) : AndroidViewModel(applicatio
         }
         if (granted) {
             speechManager.speak("Izin lokasi aktif. Pelacakan GPS real-time dimulai.")
+            fetchCurrentLocation()
             if (_uiState.value.isNavigating) {
                 val route = _uiState.value.selectedRoute
                 if (route != null) {
@@ -306,11 +347,13 @@ class SafeRiderViewModel(application: Application) : AndroidViewModel(applicatio
             _uiState.update { it.copy(isGpsTrackingActive = true) }
             locationTracker.getLocationUpdates().collect { locData ->
                 _uiState.update { current ->
+                    val isMoving = locData.speedKmh > 3
+                    val newSpeed = if (isMoving) locData.speedKmh else if (current.isNavigating && current.currentSpeedKmH > 0) current.currentSpeedKmH else locData.speedKmh
                     current.copy(
                         userLatitude = locData.latitude,
                         userLongitude = locData.longitude,
                         userSpeedKmh = locData.speedKmh,
-                        currentSpeedKmH = if (locData.speedKmh > 0) locData.speedKmh else current.currentSpeedKmH,
+                        currentSpeedKmH = newSpeed,
                         userBearing = locData.bearing,
                         userAccuracyMeters = locData.accuracyMeters,
                         isGpsTrackingActive = true
@@ -422,22 +465,52 @@ class SafeRiderViewModel(application: Application) : AndroidViewModel(applicatio
                 stepIdx = ((progress * totalSteps).toInt()).coerceIn(0, totalSteps - 1)
                 val currentStep = route.steps[stepIdx]
 
-                val speed = if (progress >= 1.0f) 0 else (38 + ((progress * 13).toInt() % 14))
+                val isRealGpsActive = _uiState.value.isGpsTrackingActive && _uiState.value.hasLocationPermission
+                val realSpeed = _uiState.value.userSpeedKmh
+                val speed = if (isRealGpsActive && realSpeed > 0) {
+                    realSpeed
+                } else if (progress >= 1.0f) {
+                    0
+                } else {
+                    (38 + ((progress * 13).toInt() % 14))
+                }
+
                 val remainingDist = ((1.0f - progress) * (route.distanceKm * 1000)).toInt()
                 val remainingMins = ((1.0f - progress) * route.durationMinutes).toInt().coerceAtLeast(1)
 
                 val currentIllum = currentStep.illuminationScore
+
+                val startLat = RealtimeLocationTracker.DEFAULT_JAKARTA_LAT
+                val startLng = RealtimeLocationTracker.DEFAULT_JAKARTA_LNG
+                val endLat = -6.2297
+                val endLng = 106.8166
+
+                val currentLat = if (isRealGpsActive && _uiState.value.userLatitude != null && _uiState.value.userLatitude != startLat) {
+                    _uiState.value.userLatitude!!
+                } else {
+                    startLat + (progress * (endLat - startLat))
+                }
+                val currentLng = if (isRealGpsActive && _uiState.value.userLongitude != null && _uiState.value.userLongitude != startLng) {
+                    _uiState.value.userLongitude!!
+                } else {
+                    startLng + (progress * (endLng - startLng))
+                }
 
                 _uiState.update {
                     it.copy(
                         progressRatio = progress,
                         currentStepIndex = stepIdx,
                         currentSpeedKmH = speed,
+                        userLatitude = currentLat,
+                        userLongitude = currentLng,
                         distanceRemainingMeters = remainingDist,
                         etaMinutesRemaining = remainingMins,
                         currentIlluminationScore = currentIllum
                     )
                 }
+
+                // Check proximity to hazards along route in real-time
+                checkHazardProximity(currentLat, currentLng)
 
                 // Check for dynamic hazard alert around 25-35% progress
                 if (progress in 0.25f..0.35f && _uiState.value.activeHazardAlert == null) {
@@ -766,7 +839,7 @@ class SafeRiderViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    // --- AI Consult Chat Flow with Gemini 3.8 Flash ---
+    // --- AI Consult Chat Flow with Gemini 3.8 Flash & Google Maps Grounding ---
     fun sendAiQuery(query: String) {
         if (query.isBlank()) return
         val userMsg = AiMessage(
@@ -784,18 +857,24 @@ class SafeRiderViewModel(application: Application) : AndroidViewModel(applicatio
         }
 
         viewModelScope.launch {
-            val responseText = try {
+            val chatResult = try {
                 aiEngine.sendMessage(query)
             } catch (e: Exception) {
-                SafeRiderRepository.generateAiResponse(query, _uiState.value.selectedRoute).text
+                val fallback = SafeRiderRepository.generateAiResponse(query, _uiState.value.selectedRoute)
+                com.example.ai.AiChatResult(
+                    text = fallback.text,
+                    groundedPlaces = fallback.groundedPlaces
+                )
             }
 
             val aiResponse = AiMessage(
                 id = "ai_${System.currentTimeMillis()}",
-                text = responseText,
+                text = chatResult.text,
                 isFromUser = false,
                 timestamp = "Sekarang",
-                modeBadge = "Gemini 3.8 Flash"
+                modeBadge = if (chatResult.groundedPlaces.isNotEmpty()) "Google Maps Grounded" else "Gemini 3.8 Flash",
+                groundedPlaces = chatResult.groundedPlaces,
+                searchSources = chatResult.webSources
             )
 
             _uiState.update {
@@ -806,6 +885,48 @@ class SafeRiderViewModel(application: Application) : AndroidViewModel(applicatio
             }
             speechManager.speak(aiResponse.text.take(180))
         }
+    }
+
+    // --- Real-World Map Mode & Google Maps Launchers ---
+    fun setMapStyleMode(mode: MapStyleMode) {
+        _uiState.update { it.copy(mapStyleMode = mode) }
+    }
+
+    fun selectPoi(poi: RealWorldPoi?) {
+        _uiState.update { it.copy(selectedPoi = poi) }
+    }
+
+    fun openInGoogleMapsNavigation(context: android.content.Context) {
+        val route = _uiState.value.selectedRoute ?: return
+        val userLat = _uiState.value.userLatitude ?: route.startLat
+        val userLng = _uiState.value.userLongitude ?: route.startLng
+        SafeRiderRepository.openNavigationInGoogleMaps(
+            context = context,
+            destLat = route.destLat,
+            destLng = route.destLng,
+            originLat = userLat,
+            originLng = userLng
+        )
+    }
+
+    fun openHazardInGoogleMaps(context: android.content.Context, hazard: HazardMarker) {
+        val lat = hazard.latitude ?: (-6.1754 + (hazard.y - 0.5) * 0.04)
+        val lng = hazard.longitude ?: (106.8272 + (hazard.x - 0.5) * 0.04)
+        SafeRiderRepository.openPlaceInGoogleMaps(
+            context = context,
+            latitude = lat,
+            longitude = lng,
+            title = hazard.title
+        )
+    }
+
+    fun openPoiInGoogleMaps(context: android.content.Context, poi: RealWorldPoi) {
+        SafeRiderRepository.openPlaceInGoogleMaps(
+            context = context,
+            latitude = poi.latitude,
+            longitude = poi.longitude,
+            title = poi.name
+        )
     }
 
     override fun onCleared() {

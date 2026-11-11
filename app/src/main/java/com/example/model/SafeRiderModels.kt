@@ -15,11 +15,39 @@ enum class AlertSeverity {
     INFO
 }
 
+data class GroundedPlace(
+    val title: String,
+    val uri: String?,
+    val placeId: String? = null,
+    val address: String? = null
+)
+
+enum class MapStyleMode(val label: String, val shortName: String) {
+    REAL_WORLD("Peta Jalan Nyata", "Jalan Nyata"),
+    TACTICAL("Peta Taktis SafeRider", "Taktis PJU"),
+    SATELLITE("Satelit Malam", "Satelit")
+}
+
+data class RealWorldPoi(
+    val id: String,
+    val name: String,
+    val category: String, // "SPBU_24H", "POS_POLISI", "RS_IGD", "LANDMARK", "TRANSIT"
+    val x: Float,
+    val y: Float,
+    val latitude: Double,
+    val longitude: Double,
+    val description: String,
+    val isOpen24Hours: Boolean,
+    val googleMapsUrl: String
+)
+
 data class MapPoint(
     val x: Float, // relative 0.0 - 1.0 on canvas
     val y: Float, // relative 0.0 - 1.0 on canvas
     val illuminationScore: Float, // 1.0 - 10.0
-    val streetName: String
+    val streetName: String,
+    val latitude: Double? = null,
+    val longitude: Double? = null
 )
 
 data class RouteStep(
@@ -46,7 +74,11 @@ data class RouteOption(
     val isRecommended: Boolean,
     val aiReasoning: String,
     val pathPoints: List<MapPoint>,
-    val steps: List<RouteStep>
+    val steps: List<RouteStep>,
+    val startLat: Double = -6.1754,
+    val startLng: Double = 106.8272,
+    val destLat: Double = -6.2301,
+    val destLng: Double = 106.8190
 )
 
 data class HazardMarker(
@@ -62,7 +94,10 @@ data class HazardMarker(
     val verified: Boolean,
     val distanceMeters: Int,
     val recommendedAction: String,
-    val notes: String = ""
+    val notes: String = "",
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val googleMapsUrl: String? = null
 )
 
 data class VoiceNavAlert(
@@ -88,7 +123,9 @@ data class AiMessage(
     val text: String,
     val isFromUser: Boolean,
     val timestamp: String,
-    val modeBadge: String? = null // "VoiceNav", "RoutePlanner", "Emergency"
+    val modeBadge: String? = null, // "VoiceNav", "RoutePlanner", "Emergency", "Google Maps Grounded"
+    val groundedPlaces: List<GroundedPlace> = emptyList(),
+    val searchSources: List<String> = emptyList()
 )
 
 data class RerouteSuggestion(

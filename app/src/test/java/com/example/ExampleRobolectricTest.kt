@@ -12,7 +12,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+@Config(sdk = [34])
 class ExampleRobolectricTest {
 
   @Test
@@ -55,5 +55,13 @@ class ExampleRobolectricTest {
     assertEquals(safeLightRoute.id, suggestion.alternativeRoute.id)
     assertTrue(suggestion.proposedIllumination > suggestion.currentIllumination)
     assertEquals(3, suggestion.hazardsAvoidedCount)
+  }
+
+  @Test
+  fun `verify location tracker default coordinates`() {
+    val defaultLat = com.example.location.RealtimeLocationTracker.DEFAULT_JAKARTA_LAT
+    val defaultLng = com.example.location.RealtimeLocationTracker.DEFAULT_JAKARTA_LNG
+    assertEquals(-6.1754, defaultLat, 0.0001)
+    assertEquals(106.8272, defaultLng, 0.0001)
   }
 }

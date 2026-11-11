@@ -257,7 +257,11 @@ fun SafeRiderApp(
                         onStartNavigation = { viewModel.startNavigation() },
                         onToggleNight = { viewModel.toggleNightTime() },
                         onSelectVehicle = { viewModel.setVehicleType(it) },
-                        onRequestLocationPermission = requestLocationPermission
+                        onRequestLocationPermission = requestLocationPermission,
+                        onDetectGpsLocation = { viewModel.fetchCurrentLocation() },
+                        onOpenInGoogleMaps = { viewModel.openInGoogleMapsNavigation(context) },
+                        onMapStyleChange = { viewModel.setMapStyleMode(it) },
+                        onUpvoteHazard = { viewModel.upvoteHazard(it) }
                     )
                 }
 
